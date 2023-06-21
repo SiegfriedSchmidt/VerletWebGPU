@@ -26,12 +26,12 @@ fn hash(state: f32) -> f32 {
     return f32(s) / 4294967295;
 }
 
-@compute @workgroup_size(8, 8)
-fn update_circles(@builtin(global_invocation_id) cell: vec3u) {
-
+@compute @workgroup_size(64)
+fn update_circles(@builtin(global_invocation_id) id: vec3u) {
+//    circles[id.x].pos = vec2f(-1, -1);
 }
 
-@compute @workgroup_size(64)
-fn solve_collisions(@builtin(global_invocation_id) id: vec3u) {
+@compute @workgroup_size(8)
+fn solve_collisions(@builtin(global_invocation_id) pos: vec3u) {
 
 }

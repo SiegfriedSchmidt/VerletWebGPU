@@ -64,11 +64,14 @@ export default class {
 
     // Layouts
     vertexBufferLayout: GPUVertexBufferLayout
-    bindGroupLayout: GPUBindGroupLayout
-    pipelineLayout: GPUPipelineLayout
+    bindGroupComputeLayout: GPUBindGroupLayout
+    bindGroupRenderLayout: GPUBindGroupLayout
+    pipelineComputeLayout: GPUPipelineLayout
+    pipelineRenderLayout: GPUPipelineLayout
 
     // Bind groups
-    bindGroup: GPUBindGroup
+    bindGroupCompute: GPUBindGroup
+    bindGroupRender: GPUBindGroup
 
     // Pipelines
     solveCollisionsPipeline: GPUComputePipeline
@@ -80,8 +83,8 @@ export default class {
         this.info = info
 
         this.resolution = [canvas.width, canvas.height];
-        this.circleCount = 1
-        this.circleRadius = 200
+        this.circleCount = 2
+        this.circleRadius = 100
         this.circleParams = 4
         this.gridCellParams = 10
 
@@ -127,19 +130,19 @@ export default class {
         }
     }
 
-    solveCollisions(encoder: GPUCommandEncoder) {
-        const computePass = encoder.beginComputePass();
-        computePass.setPipeline(this.solveCollisionsPipeline)
-        computePass.setBindGroup(0, this.bindGroup);
-        computePass.dispatchWorkgroups(this.workgroupSolveCollisionsCount[0], this.workgroupSolveCollisionsCount[1]);
-        computePass.end();
-    }
-
     updateCircles(encoder: GPUCommandEncoder) {
         const computePass = encoder.beginComputePass();
         computePass.setPipeline(this.updateCirclesPipeline)
-        computePass.setBindGroup(0, this.bindGroup);
+        computePass.setBindGroup(0, this.bindGroupCompute);
         computePass.dispatchWorkgroups(this.workgroupUpdateCirclesCount);
+        computePass.end();
+    }
+
+    solveCollisions(encoder: GPUCommandEncoder) {
+        const computePass = encoder.beginComputePass();
+        computePass.setPipeline(this.solveCollisionsPipeline)
+        computePass.setBindGroup(0, this.bindGroupCompute);
+        computePass.dispatchWorkgroups(this.workgroupSolveCollisionsCount[0], this.workgroupSolveCollisionsCount[1]);
         computePass.end();
     }
 
@@ -153,6 +156,7 @@ export default class {
             }]
         });
         pass.setPipeline(this.renderPipeline);
+        pass.setBindGroup(0, this.bindGroupRender)
         pass.setVertexBuffer(0, this.vertexBuffer);
         pass.draw(this.vertexArray.length / 2, this.circleCount);
         pass.end();
@@ -214,8 +218,8 @@ export default class {
 
     createLayouts() {
         this.vertexBufferLayout = this.createVertexLayout(this.vertexArray.BYTES_PER_ELEMENT * 2, 'float32x2')
-        this.bindGroupLayout = this.device.createBindGroupLayout({
-            label: "bind qroup layout 1",
+        this.bindGroupComputeLayout = this.device.createBindGroupLayout({
+            label: "bind group compute layout",
             entries: [{
                 binding: 0,
                 visibility: GPUShaderStage.COMPUTE,
@@ -234,7 +238,7 @@ export default class {
                 buffer: {type: "uniform"}
             }, {
                 binding: 4,
-                visibility: GPUShaderStage.COMPUTE | GPUShaderStage.VERTEX,
+                visibility: GPUShaderStage.COMPUTE,
                 buffer: {type: "storage"}
             }, {
                 binding: 5,
@@ -243,37 +247,58 @@ export default class {
             }]
         });
 
-        this.pipelineLayout = this.device.createPipelineLayout({
-            label: "grid pipeline layout",
-            bindGroupLayouts: [this.bindGroupLayout],
+        this.pipelineComputeLayout = this.device.createPipelineLayout({
+            label: "compute pipeline layout",
+            bindGroupLayouts: [this.bindGroupComputeLayout],
+        });
+
+        this.bindGroupRenderLayout = this.device.createBindGroupLayout({
+            label: "bind group render layout",
+            entries: [{
+                binding: 0,
+                visibility: GPUShaderStage.VERTEX,
+                buffer: {type: "read-only-storage"}
+            }]
+        });
+
+        this.pipelineRenderLayout = this.device.createPipelineLayout({
+            label: "render pipeline layout",
+            bindGroupLayouts: [this.bindGroupRenderLayout],
         });
     }
 
     createBindings() {
-        const entries: GPUBindGroupEntry[] = [{
-            binding: 0,
-            resource: {buffer: this.resolutionBuffer}
-        }, {
-            binding: 1,
-            resource: {buffer: this.timeBuffer}
-        }, {
-            binding: 2,
-            resource: {buffer: this.gridResolutionBuffer}
-        }, {
-            binding: 3,
-            resource: {buffer: this.globalParamsBuffer}
-        }, {
-            binding: 4,
-            resource: {buffer: this.circlesBuffer}
-        }, {
-            binding: 5,
-            resource: {buffer: this.gridBuffer}
-        }]
+        this.bindGroupCompute = this.device.createBindGroup({
+            label: "Bind group compute",
+            layout: this.bindGroupComputeLayout,
+            entries: [{
+                binding: 0,
+                resource: {buffer: this.resolutionBuffer}
+            }, {
+                binding: 1,
+                resource: {buffer: this.timeBuffer}
+            }, {
+                binding: 2,
+                resource: {buffer: this.gridResolutionBuffer}
+            }, {
+                binding: 3,
+                resource: {buffer: this.globalParamsBuffer}
+            }, {
+                binding: 4,
+                resource: {buffer: this.circlesBuffer}
+            }, {
+                binding: 5,
+                resource: {buffer: this.gridBuffer}
+            }],
+        })
 
-        this.bindGroup = this.device.createBindGroup({
-            label: "Bind group 1",
-            layout: this.bindGroupLayout,
-            entries: entries,
+        this.bindGroupRender = this.device.createBindGroup({
+            label: "Bind group compute",
+            layout: this.bindGroupRenderLayout,
+            entries: [{
+                binding: 0,
+                resource: {buffer: this.circlesBuffer}
+            }],
         })
     }
 
@@ -284,7 +309,7 @@ export default class {
 
         this.updateCirclesPipeline = this.device.createComputePipeline({
             label: "update circles pipeline",
-            layout: this.pipelineLayout,
+            layout: this.pipelineComputeLayout,
             compute: {
                 module: computeModule,
                 entryPoint: "update_circles",
@@ -293,7 +318,7 @@ export default class {
 
         this.solveCollisionsPipeline = this.device.createComputePipeline({
             label: "solve collisions pipeline",
-            layout: this.pipelineLayout,
+            layout: this.pipelineComputeLayout,
             compute: {
                 module: computeModule,
                 entryPoint: "solve_collisions",
@@ -302,7 +327,7 @@ export default class {
 
         this.renderPipeline = this.device.createRenderPipeline({
             label: "render pipeline",
-            layout: this.pipelineLayout,
+            layout: this.pipelineRenderLayout,
             vertex: {
                 module: vertexModule,
                 entryPoint: "main",
@@ -350,7 +375,7 @@ export default class {
     }
 
     writeBuffer(gpuBuffer: GPUBuffer, data: BufferSource | SharedArrayBuffer) {
-        this.queue.writeBuffer(gpuBuffer, /*bufferOffset=*/0, data);
+        this.queue.writeBuffer(gpuBuffer, 0, data);
     }
 
     createVertexLayout(arrayStride: number, format: GPUVertexFormat): GPUVertexBufferLayout {
