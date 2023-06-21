@@ -21,14 +21,24 @@ function radians(angle: number) {
     return angle / 180 * Math.PI
 }
 
+function HSLToRGB(h: number, s: number, l: number): [number, number, number] {
+    s /= 100;
+    l /= 100;
+    const k = (n: number) => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = (n: number) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return [f(0), f(8), f(4)];
+}
+
 export default class {
     canvas: HTMLCanvasElement;
     info: InfoInterface
     step: number
     resolution: [number, number]
-    gridResolution: [number, number]
+    gridResolution: [number, number, number]
     circleCount: number
-    circleRadius: number
+    deltaTime: number
+    circleMaximumRadius: number
     circleParams: number
     gridCellParams: number
     workgroupSize: number
@@ -46,8 +56,8 @@ export default class {
 
     // Arrays
     vertexArray: Float32Array
-    timeArray: Float32Array
-    resolutionArray: Uint32Array
+    timeArray: Uint32Array
+    resolutionArray: Float32Array
     gridResolutionArray: Uint32Array
     gridArray: Uint32Array
     circlesArray: Float32Array
@@ -83,16 +93,18 @@ export default class {
         this.info = info
 
         this.resolution = [canvas.width, canvas.height];
-        this.circleCount = 2
-        this.circleRadius = 100
-        this.circleParams = 4
+        this.circleCount = 4
+        this.deltaTime = 1
+        this.circleMaximumRadius = 12
+        this.circleParams = 12
         this.gridCellParams = 10
 
         this.step = 0
         this.workgroupSize = 8;
         this.gridResolution = [
-            Math.ceil(this.resolution[0] / this.circleRadius),
-            Math.ceil(this.resolution[1] / this.circleRadius)
+            Math.ceil(this.resolution[0] / this.circleMaximumRadius),
+            Math.ceil(this.resolution[1] / this.circleMaximumRadius),
+            this.gridCellParams
         ]
 
         this.workgroupSolveCollisionsCount = [
@@ -107,6 +119,8 @@ export default class {
         this.step++
         this.timeArray[0] = this.step;
         this.writeBuffer(this.timeBuffer, this.timeArray)
+        this.globalParamsArray[0] = this.step;
+        this.writeBuffer(this.globalParamsBuffer, this.globalParamsArray)
 
         const encoder = this.device.createCommandEncoder();
         this.updateCircles(encoder)
@@ -122,11 +136,32 @@ export default class {
     initCircles() {
         for (let i = 0; i < this.circleCount; i++) {
             const ind = i * this.circleParams
-            this.circlesArray[ind] = getInRange([-1, 1])
-            this.circlesArray[ind + 1] = getInRange([-1, 1])
+            // 0 position
+            this.circlesArray[ind] = this.resolution[0] / 2 + Math.cos(radians(i * 80)) * 100
+            this.circlesArray[ind + 1] = this.resolution[1] / 2 + Math.sin(radians(i * 80)) * 100
 
-            this.circlesArray[ind + 2] = getInRange([1, 1])
-            this.circlesArray[ind + 3] = getInRange([1, 1])
+            // 8 last position
+            this.circlesArray[ind + 2] = this.circlesArray[ind] - Math.cos(radians(i * 80)) * 2
+            this.circlesArray[ind + 3] = this.circlesArray[ind + 1] - Math.sin(radians(i * 80)) * 2
+
+            // 16 acceleration
+            this.circlesArray[ind + 4] = 0
+            this.circlesArray[ind + 5] = -0.1
+
+            // 24 alignment
+            this.circlesArray[ind + 6] = 0
+            this.circlesArray[ind + 7] = 0
+
+            // 32 color
+            const color = HSLToRGB(i * 80, 100, 50)
+            this.circlesArray[ind + 8] = color[0]
+            this.circlesArray[ind + 9] = color[1]
+            this.circlesArray[ind + 10] = color[2]
+
+            // 44 radius
+            this.circlesArray[ind + 11] = getInRange([8, 8])
+
+            // 48
         }
     }
 
@@ -151,14 +186,14 @@ export default class {
             colorAttachments: [{
                 view: this.context.getCurrentTexture().createView(),
                 loadOp: "clear",
-                clearValue: {r: 0, g: 0, b: 0.4, a: 1.0},
+                clearValue: {r: 0, g: 0, b: 0, a: 1.0},
                 storeOp: "store",
             }]
         });
         pass.setPipeline(this.renderPipeline);
         pass.setBindGroup(0, this.bindGroupRender)
         pass.setVertexBuffer(0, this.vertexBuffer);
-        pass.draw(this.vertexArray.length / 2, this.circleCount);
+        pass.draw(this.vertexArray.length / 2, Math.min(this.circleCount, this.step));
         pass.end();
     }
 
@@ -179,20 +214,19 @@ export default class {
     }
 
     createArrays() {
-        const sx = 1 / (this.resolution[0] / this.circleRadius) * 2
-        const sy = 1 / (this.resolution[1] / this.circleRadius) * 2
         this.vertexArray = new Float32Array([
-            -sx, -sy, sx, -sy, sx, sy,
-            -sx, -sy, sx, sy, -sx, sy,
+            -1, -1, 1, -1, 1, 1,
+            -1, -1, 1, 1, -1, 1,
         ]);
 
-        this.timeArray = new Float32Array([0]);
-        this.resolutionArray = new Uint32Array(this.resolution);
+        this.timeArray = new Uint32Array([0]);
+        this.resolutionArray = new Float32Array(this.resolution);
         this.gridResolutionArray = new Uint32Array(this.gridResolution);
         this.gridArray = new Uint32Array(this.gridResolutionArray[0] * this.gridResolutionArray[1] * this.gridCellParams);
         this.circlesArray = new Float32Array(this.circleCount * this.circleParams);
         this.globalParamsArray = new Float32Array([
-            this.circleRadius,
+            this.circleCount,
+            this.deltaTime
         ])
         this.initCircles()
     }
@@ -256,8 +290,16 @@ export default class {
             label: "bind group render layout",
             entries: [{
                 binding: 0,
-                visibility: GPUShaderStage.VERTEX,
+                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
                 buffer: {type: "read-only-storage"}
+            }, {
+                binding: 1,
+                visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                buffer: {type: "uniform"}
+            }, {
+                binding: 2,
+                visibility: GPUShaderStage.FRAGMENT,
+                buffer: {type: "uniform"}
             }]
         });
 
@@ -298,7 +340,13 @@ export default class {
             entries: [{
                 binding: 0,
                 resource: {buffer: this.circlesBuffer}
-            }],
+            }, {
+                binding: 1,
+                resource: {buffer: this.resolutionBuffer}
+            }, {
+                binding: 2,
+                resource: {buffer: this.globalParamsBuffer}
+            }]
         })
     }
 
