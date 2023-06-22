@@ -93,7 +93,7 @@ export default class {
         this.info = info
 
         this.resolution = [canvas.width, canvas.height];
-        this.circleCount = 4
+        this.circleCount = 12
         this.deltaTime = 1
         this.circleMaximumRadius = 12
         this.circleParams = 12
@@ -119,8 +119,8 @@ export default class {
         this.step++
         this.timeArray[0] = this.step;
         this.writeBuffer(this.timeBuffer, this.timeArray)
-        this.globalParamsArray[0] = this.step;
-        this.writeBuffer(this.globalParamsBuffer, this.globalParamsArray)
+        // this.globalParamsArray[0] = Math.min(this.circleCount, this.step);
+        // this.writeBuffer(this.globalParamsBuffer, this.globalParamsArray)
 
         const encoder = this.device.createCommandEncoder();
         this.updateCircles(encoder)
@@ -137,12 +137,12 @@ export default class {
         for (let i = 0; i < this.circleCount; i++) {
             const ind = i * this.circleParams
             // 0 position
-            this.circlesArray[ind] = this.resolution[0] / 2 + Math.cos(radians(i * 80)) * 100
-            this.circlesArray[ind + 1] = this.resolution[1] / 2 + Math.sin(radians(i * 80)) * 100
+            this.circlesArray[ind] = this.resolution[0] / 2 + Math.cos(radians(i * 30)) * 100
+            this.circlesArray[ind + 1] = this.resolution[1] / 2 + Math.sin(radians(i * 30)) * 100
 
             // 8 last position
-            this.circlesArray[ind + 2] = this.circlesArray[ind] - Math.cos(radians(i * 80)) * 2
-            this.circlesArray[ind + 3] = this.circlesArray[ind + 1] - Math.sin(radians(i * 80)) * 2
+            this.circlesArray[ind + 2] = this.circlesArray[ind] - Math.cos(radians(i * 30)) * 10
+            this.circlesArray[ind + 3] = this.circlesArray[ind + 1] - Math.sin(radians(i * 30)) * 10
 
             // 16 acceleration
             this.circlesArray[ind + 4] = 0
@@ -153,13 +153,13 @@ export default class {
             this.circlesArray[ind + 7] = 0
 
             // 32 color
-            const color = HSLToRGB(i * 80, 100, 50)
+            const color = HSLToRGB(i * 30, 100, 50)
             this.circlesArray[ind + 8] = color[0]
             this.circlesArray[ind + 9] = color[1]
             this.circlesArray[ind + 10] = color[2]
 
             // 44 radius
-            this.circlesArray[ind + 11] = getInRange([8, 8])
+            this.circlesArray[ind + 11] = this.circleMaximumRadius
 
             // 48
         }
