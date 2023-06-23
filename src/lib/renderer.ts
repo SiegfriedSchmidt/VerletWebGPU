@@ -102,8 +102,8 @@ export default class {
         this.step = 0
         this.workgroupSize = 8;
         this.gridResolution = [
-            Math.ceil(this.resolution[0] / this.circleMaximumRadius),
-            Math.ceil(this.resolution[1] / this.circleMaximumRadius),
+            Math.ceil(this.resolution[0] / (this.circleMaximumRadius * 2)),
+            Math.ceil(this.resolution[1] / (this.circleMaximumRadius * 2)),
             this.gridCellParams
         ]
 
