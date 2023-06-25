@@ -16,5 +16,7 @@ fn main(@builtin(position) pos: vec4f, @location(0) @interpolate(flat) id: u32) 
     if (dis > circle[id].radius) {
         discard;
     }
-    return vec4f(circle[id].color * (1 - 1 / (circle[id].radius - dis)) , 1);
+    var color = circle[id].color;
+//    color *= (1 - 1 / (circle[id].radius - dis));
+    return vec4f(color, 1);
 }

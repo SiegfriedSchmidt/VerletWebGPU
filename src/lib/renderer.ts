@@ -3,6 +3,8 @@ import fragmentShader from '../shaders/fragment.wgsl'
 import computeShader from '../shaders/compute.wgsl'
 import {InfoInterface} from "../index";
 
+let dt = 0
+
 function getTime() {
     return (new Date()).getMilliseconds()
 }
@@ -36,13 +38,13 @@ export default class {
     step: number
     resolution: [number, number]
     gridResolution: [number, number, number]
-    circleCount: number
+    circleMaxCount: number
+    circleCurrentCount: number
     deltaTime: number
     circleMaximumRadius: number
     circleParams: number
     gridCellParams: number
     workgroupSize: number
-    workgroupUpdateCirclesCount: number
     workgroupSolveCollisionsCount: [number, number]
 
     // API Data Structures
@@ -56,10 +58,10 @@ export default class {
 
     // Arrays
     vertexArray: Float32Array
-    timeArray: Uint32Array
+    timeArray: Int32Array
     resolutionArray: Float32Array
-    gridResolutionArray: Uint32Array
-    gridArray: Uint32Array
+    gridResolutionArray: Int32Array
+    gridArray: Int32Array
     circlesArray: Float32Array
     globalParamsArray: Float32Array
 
@@ -70,6 +72,7 @@ export default class {
     gridResolutionBuffer: GPUBuffer
     gridBuffer: GPUBuffer
     circlesBuffer: GPUBuffer
+    stageBuffer: GPUBuffer
     globalParamsBuffer: GPUBuffer
 
     // Layouts
@@ -93,9 +96,10 @@ export default class {
         this.info = info
 
         this.resolution = [canvas.width, canvas.height];
-        this.circleCount = 12
-        this.deltaTime = 1
-        this.circleMaximumRadius = 12
+        this.circleMaxCount = 8000
+        this.circleCurrentCount = 1
+        this.deltaTime = 0.004
+        this.circleMaximumRadius = 15
         this.circleParams = 12
         this.gridCellParams = 10
 
@@ -111,57 +115,58 @@ export default class {
             Math.ceil(this.gridResolution[0] / this.workgroupSize),
             Math.ceil(this.gridResolution[1] / this.workgroupSize)
         ];
-        this.workgroupUpdateCirclesCount = Math.ceil(this.circleCount / (this.workgroupSize * this.workgroupSize))
     }
 
-    update() {
-        const t = getTime()
-        this.step++
-        this.timeArray[0] = this.step;
-        this.writeBuffer(this.timeBuffer, this.timeArray)
-        // this.globalParamsArray[0] = Math.min(this.circleCount, this.step);
-        // this.writeBuffer(this.globalParamsBuffer, this.globalParamsArray)
+    async update() {
+        for (let i = 0; i < 4; i++) {
 
+            const encoder = this.device.createCommandEncoder();
+            this.step++
+            this.timeArray[0] = this.step;
+            this.writeBuffer(this.timeBuffer, this.timeArray)
+
+            this.circleCurrentCount = Math.min(this.circleMaxCount, Math.round((this.step * this.deltaTime) * 5) * 85);
+            this.globalParamsArray[0] = this.circleCurrentCount
+            this.writeBuffer(this.globalParamsBuffer, this.globalParamsArray)
+
+            await this.solveCollisions(encoder)
+            this.updateCircles(encoder)
+            this.queue.submit([encoder.finish()]);
+        }
         const encoder = this.device.createCommandEncoder();
-        this.updateCircles(encoder)
-        this.solveCollisions(encoder)
         this.render(encoder)
         this.queue.submit([encoder.finish()]);
-
-        const dt = getTime() - t
-        this.info.renderTime.innerText = `${dt} ms`
         requestAnimationFrame(() => this.update())
     }
 
-    initCircles() {
-        for (let i = 0; i < this.circleCount; i++) {
+    async getCirclesBuffer(encoder: GPUCommandEncoder) {
+        const size = this.circlesArray.byteLength
+        encoder.copyBufferToBuffer(this.circlesBuffer, 0, this.stageBuffer, 0, size)
+        await this.stageBuffer.mapAsync(GPUMapMode.READ, 0, size);
+        const copyArrayBuffer = this.stageBuffer.getMappedRange(0, size)
+        const data = copyArrayBuffer.slice(0)
+        this.stageBuffer.unmap()
+        this.circlesArray = new Float32Array(data)
+    }
+
+    getGridPos(x: number, y: number): number {
+        const cx = Math.floor(x / (this.resolution[0] / this.gridResolution[0]))
+        const cy = Math.floor(y / (this.resolution[1] / this.gridResolution[1]))
+        return (cx + cy * this.gridResolution[0]) * this.gridResolution[2];
+    }
+
+    fillGrid() {
+        for (let i = 0; i < this.circleCurrentCount; i++) {
             const ind = i * this.circleParams
-            // 0 position
-            this.circlesArray[ind] = this.resolution[0] / 2 + Math.cos(radians(i * 30)) * 100
-            this.circlesArray[ind + 1] = this.resolution[1] / 2 + Math.sin(radians(i * 30)) * 100
-
-            // 8 last position
-            this.circlesArray[ind + 2] = this.circlesArray[ind] - Math.cos(radians(i * 30)) * 10
-            this.circlesArray[ind + 3] = this.circlesArray[ind + 1] - Math.sin(radians(i * 30)) * 10
-
-            // 16 acceleration
-            this.circlesArray[ind + 4] = 0
-            this.circlesArray[ind + 5] = -0.1
-
-            // 24 alignment
-            this.circlesArray[ind + 6] = 0
-            this.circlesArray[ind + 7] = 0
-
-            // 32 color
-            const color = HSLToRGB(i * 30, 100, 50)
-            this.circlesArray[ind + 8] = color[0]
-            this.circlesArray[ind + 9] = color[1]
-            this.circlesArray[ind + 10] = color[2]
-
-            // 44 radius
-            this.circlesArray[ind + 11] = this.circleMaximumRadius
-
-            // 48
+            const gridPos = this.getGridPos(this.circlesArray[ind], this.circlesArray[ind + 1])
+            let gridI = 2
+            if (this.gridArray[gridPos] == this.step) {
+                gridI = this.gridArray[gridPos + 1]
+            } else {
+                this.gridArray[gridPos] = this.step
+            }
+            this.gridArray[gridPos + gridI] = i
+            this.gridArray[gridPos + 1] = gridI + 1
         }
     }
 
@@ -169,11 +174,14 @@ export default class {
         const computePass = encoder.beginComputePass();
         computePass.setPipeline(this.updateCirclesPipeline)
         computePass.setBindGroup(0, this.bindGroupCompute);
-        computePass.dispatchWorkgroups(this.workgroupUpdateCirclesCount);
+        computePass.dispatchWorkgroups(Math.ceil(this.circleCurrentCount / (this.workgroupSize * this.workgroupSize)));
         computePass.end();
     }
 
-    solveCollisions(encoder: GPUCommandEncoder) {
+    async solveCollisions(encoder: GPUCommandEncoder) {
+        await this.getCirclesBuffer(encoder)
+        this.fillGrid()
+        this.writeBuffer(this.gridBuffer, this.gridArray)
         const computePass = encoder.beginComputePass();
         computePass.setPipeline(this.solveCollisionsPipeline)
         computePass.setBindGroup(0, this.bindGroupCompute);
@@ -193,13 +201,52 @@ export default class {
         pass.setPipeline(this.renderPipeline);
         pass.setBindGroup(0, this.bindGroupRender)
         pass.setVertexBuffer(0, this.vertexBuffer);
-        pass.draw(this.vertexArray.length / 2, Math.min(this.circleCount, this.step));
+        pass.draw(this.vertexArray.length / 2, this.circleCurrentCount);
         pass.end();
+    }
+
+    initCircles() {
+        for (let i = 0; i < this.circleMaxCount; i++) {
+            const ind = i * this.circleParams
+            // 0 position
+            // this.circlesArray[ind] = 320 - (i % 20) * 15
+            // this.circlesArray[ind + 1] = this.resolution[1] - 100 - (i % 20) * 10
+
+            this.circlesArray[ind] = 15 + (i % 85) * this.circleMaximumRadius * 2
+            this.circlesArray[ind + 1] = this.resolution[1] - this.circleMaximumRadius
+
+            // 8 last position
+            // this.circlesArray[ind + 2] = this.circlesArray[ind] - 2
+            // this.circlesArray[ind + 3] = this.circlesArray[ind + 1] + 2
+            const velVector = [getInRange([-1, 1]), 0]
+
+            this.circlesArray[ind + 2] = this.circlesArray[ind] - velVector[0] * this.deltaTime
+            this.circlesArray[ind + 3] = this.circlesArray[ind + 1] - velVector[1] * this.deltaTime
+
+            // 16 acceleration
+            this.circlesArray[ind + 4] = 0
+            this.circlesArray[ind + 5] = -1000
+
+            // 24 alignment
+            this.circlesArray[ind + 6] = 0
+            this.circlesArray[ind + 7] = 0
+
+            // 32 color
+            const color = HSLToRGB(i * (360 / this.circleMaxCount), 100, 50)
+            this.circlesArray[ind + 8] = color[0]
+            this.circlesArray[ind + 9] = color[1]
+            this.circlesArray[ind + 10] = color[2]
+
+            // 44 radius
+            this.circlesArray[ind + 11] = getInRange([5, this.circleMaximumRadius])
+
+            // 48
+        }
     }
 
     async init() {
         if (await this.initApi()) {
-            console.log(this.resolution, this.circleCount)
+            console.log(this.resolution, this.circleMaxCount)
             this.initCanvas()
             this.createArrays()
             this.createBuffers()
@@ -219,13 +266,13 @@ export default class {
             -1, -1, 1, 1, -1, 1,
         ]);
 
-        this.timeArray = new Uint32Array([0]);
+        this.timeArray = new Int32Array([0]);
         this.resolutionArray = new Float32Array(this.resolution);
-        this.gridResolutionArray = new Uint32Array(this.gridResolution);
-        this.gridArray = new Uint32Array(this.gridResolutionArray[0] * this.gridResolutionArray[1] * this.gridCellParams);
-        this.circlesArray = new Float32Array(this.circleCount * this.circleParams);
+        this.gridResolutionArray = new Int32Array(this.gridResolution);
+        this.gridArray = new Int32Array(this.gridResolutionArray[0] * this.gridResolutionArray[1] * this.gridCellParams);
+        this.circlesArray = new Float32Array(this.circleMaxCount * this.circleParams);
         this.globalParamsArray = new Float32Array([
-            this.circleCount,
+            this.circleMaxCount,
             this.deltaTime
         ])
         this.initCircles()
@@ -237,8 +284,9 @@ export default class {
         this.timeBuffer = this.createBuffer('time', this.timeArray, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
         this.gridResolutionBuffer = this.createBuffer('grid resolution', this.gridResolutionArray, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST);
         this.globalParamsBuffer = this.createBuffer('global params', this.globalParamsArray, GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST)
-        this.circlesBuffer = this.createBuffer('circles', this.circlesArray, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST)
-        this.gridBuffer = this.createBuffer('grid', this.gridArray, GPUBufferUsage.STORAGE)
+        this.circlesBuffer = this.createBuffer('circles', this.circlesArray, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC)
+        this.stageBuffer = this.createBuffer('stage', this.circlesArray, GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST)
+        this.gridBuffer = this.createBuffer('grid', this.gridArray, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST)
     }
 
     writeBuffers() {
@@ -369,7 +417,7 @@ export default class {
             layout: this.pipelineComputeLayout,
             compute: {
                 module: computeModule,
-                entryPoint: "solve_collisions",
+                entryPoint: "find_collisions",
             }
         });
 
