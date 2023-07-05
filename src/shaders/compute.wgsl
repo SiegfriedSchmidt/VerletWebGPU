@@ -88,6 +88,9 @@ fn update_circles(@builtin(global_invocation_id) id: vec3u) {
     apply_constaint(i);
     let displacement = circle[i].pos - circle[i].lpos;
     circle[i].lpos = circle[i].pos;
+    circle[i].accel = (res / 2) - circle[i].pos;
+    let len = max(1, length(circle[i].accel));
+    circle[i].accel = circle[i].accel / (len * len) * 50000;
     circle[i].pos += displacement + circle[i].accel * global.dt * global.dt;
 //    write_grid(i);
 }

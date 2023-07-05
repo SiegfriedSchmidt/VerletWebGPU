@@ -44,8 +44,8 @@ module.exports = {
         },
         open: true,
         compress: true,
-        https: false,
-        host: 'localhost',
+        https: true,
+        host: '192.168.1.1',
         port: 8080
     },
     plugins: [

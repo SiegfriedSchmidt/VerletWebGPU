@@ -96,10 +96,10 @@ export default class {
         this.info = info
 
         this.resolution = [canvas.width, canvas.height];
-        this.circleMaxCount = 8000
+        this.circleMaxCount = 80000
         this.circleCurrentCount = 1
         this.deltaTime = 0.004
-        this.circleMaximumRadius = 15
+        this.circleMaximumRadius = 3
         this.circleParams = 12
         this.gridCellParams = 10
 
@@ -125,7 +125,7 @@ export default class {
             this.timeArray[0] = this.step;
             this.writeBuffer(this.timeBuffer, this.timeArray)
 
-            this.circleCurrentCount = Math.min(this.circleMaxCount, Math.round((this.step * this.deltaTime) * 5) * 85);
+            this.circleCurrentCount = Math.min(this.circleMaxCount, Math.round((this.step * this.deltaTime * 8)) * 6000);
             this.globalParamsArray[0] = this.circleCurrentCount
             this.writeBuffer(this.globalParamsBuffer, this.globalParamsArray)
 
@@ -212,16 +212,25 @@ export default class {
             // this.circlesArray[ind] = 320 - (i % 20) * 15
             // this.circlesArray[ind + 1] = this.resolution[1] - 100 - (i % 20) * 10
 
-            this.circlesArray[ind] = 15 + (i % 85) * this.circleMaximumRadius * 2
-            this.circlesArray[ind + 1] = this.resolution[1] - this.circleMaximumRadius
+            // this.circlesArray[ind] = 15 + (i % 85) * this.circleMaximumRadius * 2
+            // this.circlesArray[ind + 1] = this.resolution[1] - this.circleMaximumRadius
+
+            // this.circlesArray[ind] = this.resolution[0] / 2
+            // this.circlesArray[ind + 1] = this.resolution[1] - 30 - (i % 3) * 20
+
+            this.circlesArray[ind] = (i * 10) % this.resolution[0] + 10
+            this.circlesArray[ind + 1] = this.resolution[1] - Math.floor(i / (this.resolution[0] / 10)) * 10 - 20
 
             // 8 last position
             // this.circlesArray[ind + 2] = this.circlesArray[ind] - 2
             // this.circlesArray[ind + 3] = this.circlesArray[ind + 1] + 2
-            const velVector = [getInRange([-1, 1]), 0]
+            const velVector = [250, 0]
 
-            this.circlesArray[ind + 2] = this.circlesArray[ind] - velVector[0] * this.deltaTime
-            this.circlesArray[ind + 3] = this.circlesArray[ind + 1] - velVector[1] * this.deltaTime
+            this.circlesArray[ind + 2] = this.circlesArray[ind]
+            this.circlesArray[ind + 3] = this.circlesArray[ind + 1]
+
+            // this.circlesArray[ind + 2] = this.circlesArray[ind] - velVector[0] * this.deltaTime
+            // this.circlesArray[ind + 3] = this.circlesArray[ind + 1] - velVector[1] * this.deltaTime
 
             // 16 acceleration
             this.circlesArray[ind + 4] = 0
@@ -238,7 +247,7 @@ export default class {
             this.circlesArray[ind + 10] = color[2]
 
             // 44 radius
-            this.circlesArray[ind + 11] = getInRange([5, this.circleMaximumRadius])
+            this.circlesArray[ind + 11] = this.circleMaximumRadius
 
             // 48
         }
