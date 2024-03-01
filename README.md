@@ -1,2 +1,2 @@
 # Verlet solution on WebGPU
-It`s pretty interesting!
+## Demo *https://siegfriedschmidt.github.io/VerletWebGPU*
