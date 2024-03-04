@@ -9,6 +9,8 @@ const infoRenderTime = document.getElementById('renderTime') as HTMLParagraphEle
 const info: InfoInterface = {renderTime: infoRenderTime}
 
 const canvas = document.getElementById('root') as HTMLCanvasElement
+// canvas.width = window.innerWidth
+// canvas.height = window.innerHeight
 const renderer = new Renderer(canvas, info)
 if (await renderer.init()) {
     renderer.update()

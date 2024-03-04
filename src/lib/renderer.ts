@@ -96,7 +96,7 @@ export default class {
         this.info = info
 
         this.resolution = [canvas.width, canvas.height];
-        this.circleMaxCount = 80000
+        this.circleMaxCount = 150000
         this.circleCurrentCount = 1
         this.deltaTime = 0.004
         this.circleMaximumRadius = 3
@@ -218,8 +218,8 @@ export default class {
             // this.circlesArray[ind] = this.resolution[0] / 2
             // this.circlesArray[ind + 1] = this.resolution[1] - 30 - (i % 3) * 20
 
-            this.circlesArray[ind] = (i * 10) % this.resolution[0] + 10
-            this.circlesArray[ind + 1] = this.resolution[1] - Math.floor(i / (this.resolution[0] / 10)) * 10 - 20
+            this.circlesArray[ind] = (i * 7) % (this.resolution[0] - 20) + 10
+            this.circlesArray[ind + 1] = this.resolution[1] - Math.floor(i / ((this.resolution[0] - 20) / 7)) * 7 - 10
 
             // 8 last position
             // this.circlesArray[ind + 2] = this.circlesArray[ind] - 2
