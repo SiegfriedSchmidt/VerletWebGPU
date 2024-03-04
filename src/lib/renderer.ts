@@ -91,12 +91,12 @@ export default class {
     updateCirclesPipeline: GPUComputePipeline
     renderPipeline: GPURenderPipeline
 
-    constructor(canvas: HTMLCanvasElement, info: InfoInterface) {
+    constructor(canvas: HTMLCanvasElement, info: InfoInterface, numCircles: number) {
         this.canvas = canvas
         this.info = info
 
         this.resolution = [canvas.width, canvas.height];
-        this.circleMaxCount = 150000
+        this.circleMaxCount = numCircles
         this.circleCurrentCount = 1
         this.deltaTime = 0.004
         this.circleMaximumRadius = 3
